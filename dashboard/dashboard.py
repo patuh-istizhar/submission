@@ -1,37 +1,9 @@
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import streamlit as st
-import datetime as dt
-from cycler import cycler
 from pathlib import Path
 
-# Theme configuration
-monoblue_theme = {
-    "axes.spines.top": False,
-    "axes.spines.right": False,
-    "xtick.minor.visible": False,
-    "xtick.major.size": 5,
-    "ytick.major.size": 5,
-    "ytick.minor.visible": False,
-    "yaxis.labellocation": "top",
-    "xaxis.labellocation": "right",
-    "scatter.marker": "o",
-    "lines.linewidth": 2.0,
-    "axes.labelsize": 12,
-    "axes.linewidth": 1.0,
-    "text.color": "#002060",
-    "axes.facecolor": "#EBF5FF",
-    "figure.facecolor": "#EBF5FF",
-    "axes.labelcolor": "#002060",
-    "axes.edgecolor": "#002060",
-    "xtick.color": "#002060",
-    "ytick.color": "#002060",
-    "axes.prop_cycle": cycler(
-        "color", ["#002060", "#4682B4", "#ADD8E6", "#B0C4DE", "#778899"]
-    ),
-}
-plt.rcParams.update(monoblue_theme)
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+import streamlit as st
 
 # Data mappings
 CITY_MAPPING = {
@@ -72,10 +44,12 @@ STATE_MAPPING = {
     "TO": "Tocantins",
 }
 
+# Merged duplicate categories
 CATEGORY_MAPPING = {
     "office_furniture": "Office Furniture",
     "housewares": "Housewares",
     "home_confort": "Home Comfort",
+    "home_comfort_2": "Home Comfort",
     "sports_leisure": "Sports & Leisure",
     "computers_accessories": "Computers & Accessories",
     "toys": "Toys",
@@ -103,12 +77,12 @@ CATEGORY_MAPPING = {
     "home_construction": "Home Construction",
     "luggage_accessories": "Luggage & Accessories",
     "electronics": "Electronics",
+    "home_appliances": "Home Appliances",
     "home_appliances_2": "Home Appliances",
     "fashion_male_clothing": "Men's Clothing",
     "small_appliances": "Small Appliances",
     "small_appliances_home_oven_and_coffee": "Oven & Coffee Appliances",
     "books_general_interest": "Books - General",
-    "home_appliances": "Home Appliances",
     "costruction_tools_tools": "Construction Tools",
     "signaling_and_security": "Signaling & Security",
     "musical_instruments": "Musical Instruments",
@@ -140,7 +114,6 @@ CATEGORY_MAPPING = {
     "cine_photo": "Cinema & Photography",
     "cds_dvds_musicals": "CDs, DVDs & Musicals",
     "fashion_sport": "Sportswear",
-    "home_comfort_2": "Home Comfort",
     "arts_and_craftmanship": "Arts & Craftsmanship",
     "fashion_childrens_clothes": "Children's Clothing",
     "security_and_services": "Security & Services",
@@ -155,10 +128,12 @@ PAYMENT_MAPPING = {
 }
 
 
-# Helper functions
 def get_top_cities(df, n=5):
+    if df.empty:
+        return pd.DataFrame(columns=["City", "Number of Customers"])
+
     return (
-        df.groupby("customer_city")["customer_id"]
+        df.groupby("customer_city")["customer_unique_id"]
         .nunique()
         .nlargest(n)
         .reset_index()
@@ -169,13 +144,16 @@ def get_top_cities(df, n=5):
             .fillna(x["customer_city"])
         )
         .drop(columns="customer_city")
-        .rename(columns={"customer_id": "Number of Customers"})
+        .rename(columns={"customer_unique_id": "Number of Customers"})
     )
 
 
 def get_top_states(df, n=5):
+    if df.empty:
+        return pd.DataFrame(columns=["State", "Number of Customers"])
+
     return (
-        df.groupby("customer_state")["customer_id"]
+        df.groupby("customer_state")["customer_unique_id"]
         .nunique()
         .nlargest(n)
         .reset_index()
@@ -185,11 +163,14 @@ def get_top_states(df, n=5):
             .fillna(x["customer_state"])
         )
         .drop(columns="customer_state")
-        .rename(columns={"customer_id": "Number of Customers"})
+        .rename(columns={"customer_unique_id": "Number of Customers"})
     )
 
 
 def get_top_categories_by_orders(df, n=5):
+    if df.empty:
+        return pd.DataFrame(columns=["Category", "Number of Orders"])
+
     return (
         df.groupby("product_category_name_english")["order_id"]
         .nunique()
@@ -206,6 +187,9 @@ def get_top_categories_by_orders(df, n=5):
 
 
 def get_top_categories_by_revenue(df, n=5):
+    if df.empty:
+        return pd.DataFrame(columns=["Category", "Total Revenue"])
+
     return (
         df.groupby("product_category_name_english")["price"]
         .sum()
@@ -222,6 +206,9 @@ def get_top_categories_by_revenue(df, n=5):
 
 
 def get_payment_counts(df, n=5):
+    if df.empty:
+        return pd.DataFrame(columns=["Payment", "Count"])
+
     return (
         df["payment_type"]
         .value_counts()
@@ -238,6 +225,9 @@ def get_payment_counts(df, n=5):
 
 
 def get_payment_revenue(df, n=5):
+    if df.empty:
+        return pd.DataFrame(columns=["Payment", "Total Revenue"])
+
     return (
         df.groupby("payment_type")["payment_value"]
         .sum()
@@ -254,14 +244,28 @@ def get_payment_revenue(df, n=5):
 
 
 def calculate_rfm(df):
+    if df.empty:
+        return pd.DataFrame(
+            columns=[
+                "Recency",
+                "Frequency",
+                "Monetary",
+                "R_Score",
+                "F_Score",
+                "M_Score",
+                "RFM_Segment",
+                "RFM_Score",
+                "Customer_Segment",
+            ]
+        )
+
     df["order_purchase_timestamp"] = pd.to_datetime(
         df["order_purchase_timestamp"], errors="coerce"
     )
 
-    valid_df = df.dropna(subset=["order_purchase_timestamp"])
+    valid_df = df.dropna(subset=["order_purchase_timestamp", "customer_unique_id"])
 
     if valid_df.empty:
-        # Return an empty DataFrame with the expected structure if no valid data
         return pd.DataFrame(
             columns=[
                 "Recency",
@@ -297,25 +301,65 @@ def calculate_rfm(df):
     )
 
     for col, labels in [
-        ("Recency", [5, 4, 3, 2, 1]),
-        ("Frequency", [1, 2, 3, 4, 5]),
-        ("Monetary", [1, 2, 3, 4, 5]),
+        ("Recency", [5, 4, 3, 2, 1]),  # Higher score for lower recency
+        ("Frequency", [1, 2, 3, 4, 5]),  # Higher score for higher frequency
+        ("Monetary", [1, 2, 3, 4, 5]),  # Higher score for higher monetary value
     ]:
         try:
-            rfm[f"{col[0]}_Score"] = pd.qcut(
-                rfm[col] if col != "Frequency" else rfm[col].rank(method="first"),
-                q=5,
-                labels=labels,
-                duplicates="drop",
-            )
+            if col == "Recency":
+                # For recency, lower is better
+                rfm[f"{col[0]}_Score"] = pd.qcut(
+                    rfm[col], q=5, labels=labels, duplicates="drop"
+                )
+            else:
+                # For frequency and monetary, higher is better
+                # Use rank for frequency to handle potential duplicates
+                column_data = (
+                    rfm[col] if col != "Frequency" else rfm[col].rank(method="first")
+                )
+
+                # Check if we have at least 5 unique values for qcut
+                if len(column_data.unique()) >= 5:
+                    rfm[f"{col[0]}_Score"] = pd.qcut(
+                        column_data, q=5, labels=labels, duplicates="drop"
+                    )
+                else:
+                    # Use quantile-based manual binning for fewer unique values
+                    percentiles = [0, 0.2, 0.4, 0.6, 0.8, 1.0]
+                    bins = [column_data.quantile(p) for p in percentiles]
+                    # Ensure bins are unique
+                    bins = sorted(set(bins))
+                    # If still not enough bins, fall back to equal bins
+                    if len(bins) < 3:
+                        bins = [
+                            column_data.min(),
+                            column_data.median(),
+                            column_data.max(),
+                        ]
+
+                    if len(bins) >= 2:  # Need at least 2 bins
+                        rfm[f"{col[0]}_Score"] = pd.cut(
+                            column_data,
+                            bins=bins,
+                            labels=labels[: len(bins) - 1],
+                            include_lowest=True,
+                        )
+                    else:
+                        rfm[f"{col[0]}_Score"] = 3  # Neutral middle score if can't bin
         except ValueError:
-            # Handle case when there are not enough unique values for qcut
-            rfm[f"{col[0]}_Score"] = 1
+            # Fallback to manual scoring if qcut fails
+            rfm[f"{col[0]}_Score"] = 3  # Assign neutral score as fallback
+
+    # Ensure all scores are integers for calculation
+    for score_col in ["R_Score", "F_Score", "M_Score"]:
+        if rfm[score_col].dtype != "int64":
+            rfm[score_col] = rfm[score_col].astype("int64")
 
     rfm["RFM_Segment"] = (
         rfm[["R_Score", "F_Score", "M_Score"]].astype(str).agg("".join, axis=1)
     )
-    rfm["RFM_Score"] = rfm[["R_Score", "F_Score", "M_Score"]].astype(int).sum(axis=1)
+    rfm["RFM_Score"] = rfm[["R_Score", "F_Score", "M_Score"]].sum(axis=1)
+
     rfm["Customer_Segment"] = pd.cut(
         rfm["RFM_Score"],
         bins=[-1, 5, 8, 11, float("inf")],
@@ -326,6 +370,14 @@ def calculate_rfm(df):
 
 # Plotting function
 def create_bar_plot(data, x, y, title, rotate_x=False):
+    """Create bar plot visualization with consistent styling."""
+    if data.empty:
+        # Return empty figure if no data
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.text(0.5, 0.5, "No data available", ha="center", va="center")
+        ax.set(title=title)
+        return fig
+
     fig, ax = plt.subplots(figsize=(10, 6))
     sns.barplot(data=data, x=x, y=y, ax=ax)
     ax.set(xlabel=None, ylabel=None, title=title)
@@ -333,6 +385,28 @@ def create_bar_plot(data, x, y, title, rotate_x=False):
         plt.xticks(rotation=45)
     plt.tight_layout()
     return fig
+
+
+# Preprocess datetime columns consistently
+def preprocess_dataframe(df):
+    """Process datetime columns consistently."""
+    if df.empty:
+        return df
+
+    # Convert all timestamp columns to datetime
+    datetime_columns = [
+        "order_purchase_timestamp",
+        "order_approved_at",
+        "order_delivered_carrier_date",
+        "order_delivered_customer_date",
+        "order_estimated_delivery_date",
+    ]
+
+    for col in datetime_columns:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce")
+
+    return df
 
 
 # Main app
@@ -347,7 +421,7 @@ def main():
     try:
         data_path = Path("./dashboard/main_data.csv")
         df = pd.read_csv(data_path)
-        df["order_approved_at"] = pd.to_datetime(df["order_approved_at"])
+        df = preprocess_dataframe(df)  # Process all datetime columns consistently
     except FileNotFoundError:
         st.error(f"Data file not found at {data_path}. Please check the file path.")
         return
@@ -360,23 +434,31 @@ def main():
         st.image(
             "https://upload.wikimedia.org/wikipedia/commons/7/77/Streamlit-logo-primary-colormark-darktext.png"
         )
-        min_date, max_date = (
-            df["order_approved_at"].min().date(),
-            df["order_approved_at"].max().date(),
-        )
-        start_date, end_date = st.date_input(
-            "Time Span",
-            min_value=min_date,
-            max_value=max_date,
-            value=(min_date, max_date),
-        )
 
-        if isinstance(start_date, tuple) and len(start_date) == 2:
-            # Handle case when streamlit returns a tuple instead of individual dates
-            start_date, end_date = start_date
+        # Determine date range based on available data
+        date_column = "order_purchase_timestamp"  # Use this column consistently
 
-        mask = df["order_approved_at"].dt.date.between(start_date, end_date)
-        filtered_df = df.loc[mask]
+        if df[date_column].notna().any():
+            min_date, max_date = (
+                df[date_column].min().date(),
+                df[date_column].max().date(),
+            )
+            start_date, end_date = st.date_input(
+                "Time Span",
+                min_value=min_date,
+                max_value=max_date,
+                value=(min_date, max_date),
+            )
+
+            if isinstance(start_date, tuple) and len(start_date) == 2:
+                # Handle case when streamlit returns a tuple instead of individual dates
+                start_date, end_date = start_date
+
+            mask = df[date_column].dt.date.between(start_date, end_date)
+            filtered_df = df.loc[mask]
+        else:
+            st.error(f"No valid dates found in {date_column} column.")
+            filtered_df = pd.DataFrame()
 
         st.write(f"Filtered data: {len(filtered_df)} records")
 
